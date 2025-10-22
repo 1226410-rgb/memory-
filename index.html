@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>🧠 Memory Royale - コンボモード付き</title>
+<style>
+  body {
+    background: radial-gradient(circle at center, #003300, #000000 80%);
+    color: #ffd700;
+    font-family: "Segoe UI", sans-serif;
+    text-align: center;
+    margin: 0;
+    padding: 20px;
+  }
+
+  h1 {
+    text-shadow: 0 0 10px #ffcc00, 0 0 20px #ff8800;
+  }
+
+  select, button {
+    font-size: 18px;
+    padding: 10px 20px;
+    margin: 8px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ffcc00, #ff9900);
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 0 10px #ffcc00;
+    transition: 0.3s;
+  }
+
+  select:hover, button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px #ffdd33;
+  }
+
+  #board {
+    display: grid;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+  }
+
+  .card {
+    width: 90px;
+    height: 130px;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(0,0,0,0.6);
+    transition: transform 0.2s;
+  }
+
+  .card:hover {
+    transform: scale(1.05);
+  }
+
+  #scoreBoard {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 10px;
+  }
+
+  .playerBox {
+    padding: 10px 20px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    transition: all 0.3s;
+  }
+
+  .activeTurn {
+    background: rgba(255, 255, 0, 0.2);
+    box-shadow: 0 0 15px #ffdd33;
+    transform: scale(1.1);
+  }
+
+  #turnIndicator {
+    font-size: 22px;
+    color: #00ffff;
+    text-shadow: 0 0 8px #00ffff;
+    margin-top: 10px;
+  }
+
+  #message {
+    font-size: 24px;
+    margin-top: 15px;
+    color: #ffdd77;
+    text-shadow: 0 0 8px #ffaa00;
+  }
+
+  #resultOverlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    z-index: 1000;
+  }
+
+  #resultOverlay h1 {
+    font-size: 60px;
+    text-shadow: 0 0 25px #ffcc00, 0 0 50px #ff8800;
+    margin-bottom: 40px;
+  }
+
+  #replayButton {
+    font-size: 22px;
+    padding: 12px 30px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ffcc00, #ff9900);
+    color: black;
+    font-weight: bold;
+    box-shadow: 0 0 15px #ffaa00;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <h1>♢神経衰弱♣</h1>
+  <h2>コンボモードは、コンボするたびスコアボーナス！一発逆転！！</h2>
+
+  <div id="config">
+    🎮 モード：
+    <select id="modeSelect">
+      <option value="cpu">CPU対戦（1人＋CPU）</option>
+      <option value="multi">プレイヤー対戦（2～4人）</option>
+    </select>
+
+    👥 プレイヤー人数：
+    <select id="playerCount">
+      <option value="2">2人</option>
+      <option value="3">3人</option>
+      <option value="4">4人</option>
+    </select>
+
+    💡 ヒント：
+    <select id="hintOption">
+      <option value="on">あり</option>
+      <option value="off">なし</option>
+    </select>
+
+    🃏 カード枚数：
+    <select id="cardCount">
+      <option value="26">26枚（13ペア）</option>
+      <option value="36">36枚（18ペア）</option>
+      <option value="52">52枚（26ペア）</option>
+    </select>
+
+    🔥 スコアモード：
+    <select id="comboMode">
+      <option value="normal">通常</option>
+      <option value="combo">コンボスコア</option>
+    </select>
+
+    <button id="startButton">▶ ゲーム開始</button>
+  </div>
+
+  <div id="scoreBoard"></div>
+  <div id="turnIndicator"></div>
+  <div id="board"></div>
+  <div id="message"></div>
+
+  <div id="resultOverlay">
+    <h1 id="resultText"></h1>
+    <button id="replayButton">🔁 再プレイ</button>
+  </div>
+
+<script>
+const CARD_PATH = "cards/";
+const backImage = CARD_PATH + "card_back.png";
+const suits = ["spade", "heart", "club", "diamond"];
+const ranks = ["01","02","03","04","05","06","07","08","09","10","11","12","13"];
+
+let cards = [];
+let cardElements = [];
+let opened = [];
+let matched = 0;
+let gameStarted = false;
+let players = [];
+let currentPlayer = 0;
+let cpuMemory = {};
+let comboEnabled = false;
+let hintEnabled = true;
+let comboCount = 0;
+
+const board = document.getElementById("board");
+const message = document.getElementById("message");
+const scoreBoard = document.getElementById("scoreBoard");
+const turnIndicator = document.getElementById("turnIndicator");
+const startBtn = document.getElementById("startButton");
+const replayBtn = document.getElementById("replayButton");
+const overlay = document.getElementById("resultOverlay");
+const resultText = document.getElementById("resultText");
+
+startBtn.addEventListener("click", startGameSetup);
+replayBtn.addEventListener("click", () => location.reload());
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function startGameSetup() {
+  const mode = document.getElementById("modeSelect").value;
+  const numPlayers = parseInt(document.getElementById("playerCount").value);
+  const cardCount = parseInt(document.getElementById("cardCount").value);
+  hintEnabled = document.getElementById("hintOption").value === "on";
+  comboEnabled = document.getElementById("comboMode").value === "combo";
+
+  if (mode === "cpu") {
+    players = [
+      { name: "プレイヤー", score: 0, isCPU: false },
+      { name: "CPU", score: 0, isCPU: true }
+    ];
+  } else {
+    players = [];
+    for (let i = 1; i <= numPlayers; i++) {
+      players.push({ name: `プレイヤー${i}`, score: 0, isCPU: false });
+    }
+  }
+
+  startBtn.disabled = true;
+  document.getElementById("config").style.display = "none";
+  initCards(cardCount);
+  createBoard(cardCount);
+  updateScoreBoard();
+
+  if (hintEnabled) {
+    message.textContent = "🧠 記憶タイム開始！";
+    showAllCards();
+    let countdown = 5;
+    const timer = setInterval(() => {
+      message.textContent = `🧠 記憶タイム：${countdown} 秒`;
+      countdown--;
+      if (countdown < 0) {
+        clearInterval(timer);
+        hideAllCards();
+        startGame();
+      }
+    }, 1000);
+  } else {
+    startGame();
+  }
+}
+
+function initCards(count) {
+  cards = [];
+  const pairs = count / 2;
+  const selected = shuffle([...Array(52).keys()]).slice(0, pairs);
+  selected.forEach(i => {
+    const s = suits[i % 4];
+    const r = ranks[Math.floor(i / 4)];
+    cards.push(`${s}_${r}`, `${s}_${r}`);
+  });
+  cards = shuffle(cards);
+}
+
+function createBoard(count) {
+  board.innerHTML = "";
+  cardElements = [];
+  const cols = Math.ceil(Math.sqrt(count));
+  board.style.gridTemplateColumns = `repeat(${cols}, 90px)`;
+
+  cards.forEach(card => {
+    const img = document.createElement("img");
+    img.src = backImage;
+    img.className = "card";
+    img.dataset.card = card;
+    img.dataset.state = "back";
+    img.addEventListener("click", () => {
+      if (gameStarted && !players[currentPlayer].isCPU) flip(img);
+    });
+    board.appendChild(img);
+    cardElements.push(img);
+  });
+}
+
+function updateScoreBoard() {
+  scoreBoard.innerHTML = "";
+  players.forEach((p, i) => {
+    const div = document.createElement("div");
+    div.className = "playerBox" + (i === currentPlayer ? " activeTurn" : "");
+    div.textContent = `${p.name}: ${p.score} 点`;
+    scoreBoard.appendChild(div);
+  });
+  turnIndicator.textContent = `🎯 現在のターン：${players[currentPlayer].name}`;
+}
+
+function showAllCards() {
+  cardElements.forEach(img => {
+    img.src = CARD_PATH + "card_" + img.dataset.card + ".png";
+  });
+}
+
+function hideAllCards() {
+  cardElements.forEach(img => {
+    img.src = backImage;
+    img.dataset.state = "back";
+  });
+}
+
+function startGame() {
+  gameStarted = true;
+  comboCount = 0;
+  message.textContent = `🎮 ${players[currentPlayer].name} のターン！`;
+  if (players[currentPlayer].isCPU) setTimeout(cpuTurn, 1000);
+}
+
+function flip(img) {
+  if (img.dataset.state === "front" || opened.length === 2) return;
+  img.src = CARD_PATH + "card_" + img.dataset.card + ".png";
+  img.dataset.state = "front";
+  opened.push(img);
+
+  const rank = img.dataset.card.split("_")[1];
+  if (!cpuMemory[rank]) cpuMemory[rank] = [];
+  if (!cpuMemory[rank].includes(img)) cpuMemory[rank].push(img);
+
+  if (opened.length === 2) setTimeout(checkPair, 800);
+}
+
+function checkPair() {
+  const [c1, c2] = opened;
+  const rank1 = c1.dataset.card.split("_")[1];
+  const rank2 = c2.dataset.card.split("_")[1];
+
+  if (rank1 === rank2) {
+    c1.style.visibility = "hidden";
+    c2.style.visibility = "hidden";
+    matched++;
+    cpuMemory[rank1] = [];
+    comboCount++;
+
+    let points = 1;
+    if (comboEnabled && comboCount > 1) points = comboCount; // コンボ加算
+
+    players[currentPlayer].score += points;
+    message.textContent = `${players[currentPlayer].name} がペア！ (+${points}点, コンボ${comboCount})`;
+    updateScoreBoard();
+
+    const totalPairs = cards.length / 2;
+    if (matched === totalPairs) return endGame();
+
+    opened = [];
+    if (players[currentPlayer].isCPU) return setTimeout(cpuTurn, 1000);
+  } else {
+    comboCount = 0; // コンボリセット
+    setTimeout(() => {
+      c1.src = backImage;
+      c2.src = backImage;
+      c1.dataset.state = "back";
+      c2.dataset.state = "back";
+      opened = [];
+      nextTurn();
+    }, 700);
+  }
+}
+
+function nextTurn() {
+  currentPlayer = (currentPlayer + 1) % players.length;
+  updateScoreBoard();
+  message.textContent = `${players[currentPlayer].name} のターン！`;
+  if (players[currentPlayer].isCPU) setTimeout(cpuTurn, 1000);
+}
+
+function cpuTurn() {
+  const knownPairs = Object.entries(cpuMemory).filter(([rank, arr]) =>
+    arr.length === 2 && arr.every(c => c.dataset.state === "back")
+  );
+
+  if (knownPairs.length > 0) {
+    const [rank, arr] = knownPairs[0];
+    flip(arr[0]);
+    setTimeout(() => flip(arr[1]), 600);
+    return;
+  }
+
+  const hidden = cardElements.filter(c => c.dataset.state === "back");
+  if (hidden.length < 2) return;
+  const c1 = hidden[Math.floor(Math.random() * hidden.length)];
+  flip(c1);
+  setTimeout(() => {
+    const remaining = cardElements.filter(c => c.dataset.state === "back");
+    const c2 = remaining[Math.floor(Math.random() * remaining.length)];
+    flip(c2);
+  }, 700);
+}
+
+function endGame() {
+  gameStarted = false;
+  const max = Math.max(...players.map(p => p.score));
+  const winners = players.filter(p => p.score === max).map(p => p.name);
+  resultText.textContent = winners.length > 1
+    ? `🤝 引き分け (${winners.join("・")})`
+    : `🏆 ${winners[0]} の勝利！`;
+  overlay.style.display = "flex";
+}
+</script>
+</body>
+</html>
